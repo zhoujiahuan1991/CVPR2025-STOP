@@ -400,12 +400,7 @@ class VisualTransformer(nn.Module):
 
         BT = x.shape[0]
         B = BT//self.video_frames
-        if self.shared_latent_space == "transformer":
-            unified_visual_frame_prompt = unified_visual_prompt.reshape(B,self.video_frames,self.num_tokens,x.size(-1))
-        elif  self.shared_latent_space == "linear":
-            unified_visual_frame_prompt = unified_visual_prompt.view(B,self.num_tokens,x.size(-1)).unsqueeze(1).expand(-1,self.video_frames,-1,-1)
-        else:
-            raise NotImplementedError('Do not find implementation of {}'.format(self.shared_latent_space))
+        unified_visual_frame_prompt = unified_visual_prompt.reshape(B,self.video_frames,self.num_tokens,x.size(-1))
         x = x.view(B,self.video_frames,x.size(-2),x.size(-1))
         
         unified_visual_global_prompt = self.prompt_dropout(self.prompt_proj(self.prompt_embeddings).expand(B, -1, -1))
@@ -433,14 +428,8 @@ class VisualTransformer(nn.Module):
                 
             else:
                 if i <= len(unified_visual_prompt):
-                    if self.shared_latent_space == "transformer":         
-                        unified_visual_frame_prompt = unified_visual_prompt[i].reshape(B,self.video_frames,self.num_tokens,x.size(-1)).permute(2,1,0,3)                      
-                        
-                    elif  self.shared_latent_space == "linear":
-                        unified_visual_frame_prompt = unified_visual_prompt[i].view(B,self.num_tokens,x.size(-1)).unsqueeze(1).expand(-1,self.video_frames,-1,-1).permute(2,1,0,3)  
-                    else:
-                        raise NotImplementedError('Do not find implementation of {}'.format(self.shared_latent_space))
-
+                    unified_visual_frame_prompt = unified_visual_prompt[i].reshape(B,self.video_frames,self.num_tokens,x.size(-1)).permute(2,1,0,3)
+                    
                     hidden_states_global = hidden_states[:self.num_tokens, :, :]
                     hidden_states = hidden_states[self.num_tokens:, :, :].reshape(-1,self.video_frames,B,x.size(-1))
                     hidden_states_local = torch.cat((
@@ -504,6 +493,9 @@ class VisualTransformer(nn.Module):
         
         if self.args.temporal_prompt in ['group2-2']: 
             inter_frame_prompt = self.TemporalPrompt.get_inter_frame_prompt(x)
+            if  self.shared_latent_space == "linear":
+                F = int(inter_frame_prompt.shape[2] / unified_visual_prompt.shape[2])
+                unified_visual_prompt = unified_visual_prompt.repeat(1,1,F,1)
             unified_visual_prompt = unified_visual_prompt + inter_frame_prompt
         
         
@@ -681,42 +673,15 @@ class CLIP(nn.Module):
     
     def encode_prompt(self,batch_size,device):
         if self.shared_latent_space == "transformer":
-            # print(self.unified_prompt_tokens.shape)
-            # torch.Size([56])
             unified_prompt_tokens = self.unified_prompt_tokens.unsqueeze(0).expand(batch_size, -1).to(device)
-            # print(unified_prompt_tokens.shape)
-            # torch.Size([4, 56])
-            unified_prompt_embedding = self.unified_prompt_embedding(unified_prompt_tokens)
-            # print(unified_prompt_embedding.shape)
-            # torch.Size([4, 56, 9216])         
+            unified_prompt_embedding = self.unified_prompt_embedding(unified_prompt_tokens)      
             unified_prompt_embedding = unified_prompt_embedding.view(batch_size,self.unified_prompt_length,self.unified_prompt_layers,self.unified_prompt_width)
-            # print(unified_prompt_embedding.shape)
-            # torch.Size([4, 56, 12, 768])
             unified_prompt_embedding =  unified_prompt_embedding.permute(2,0,1,3)  ##layers,bz,length,width
-            # print(unified_prompt_embedding.shape)
-            # torch.Size([12, 4, 56, 768])
-            
             unified_prompt_embedding= unified_prompt_embedding.reshape(self.unified_prompt_layers*batch_size,self.unified_prompt_length,self.unified_prompt_width).permute(1,0,2)
-            # print(unified_prompt_embedding.shape)
-            # torch.Size([56, 48, 768])
-            
-
             unified_prompt_output = self.PromptTransformer(unified_prompt_embedding)
-            # print(unified_prompt_output.shape)
-            # torch.Size([56, 48, 768])
-            
             unified_prompt_output = unified_prompt_output.permute(1,0,2).view(self.unified_prompt_layers,batch_size,self.unified_prompt_length,self.unified_prompt_width)
-            # print(unified_prompt_output.shape)
-            # torch.Size([12, 4, 56, 768])
-            
             unified_text_prompt = self.unified_prompt_mlp(unified_prompt_output[:,:,:self.unified_text_prompt_length,:])
-            # print(unified_text_prompt.shape)
-            # torch.Size([12, 4, 8, 512])
-            
             unified_visual_prompt = unified_prompt_output[:,:,self.unified_text_prompt_length:,:]
-            # print(unified_visual_prompt.shape)
-            # torch.Size([12, 4, 48, 768])
-            # input()
             
 
         elif self.shared_latent_space == "linear":
