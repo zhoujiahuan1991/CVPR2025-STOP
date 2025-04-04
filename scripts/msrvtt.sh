@@ -44,7 +44,7 @@ precision=amp
 freeze_clip=1
 time_embedding=0
 
-shared_latent_space=linear
+shared_latent_space=transformer
 
 # distributed training
 init_method='tcp://127.0.0.1:6010'
