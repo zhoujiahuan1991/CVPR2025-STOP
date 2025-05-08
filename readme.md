@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # [CVPR2025] STOP: Integrated Spatial-Temporal Dynamic Prompting for Video Understanding
 
 <div align="center">
